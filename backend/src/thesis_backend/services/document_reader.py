@@ -9,7 +9,7 @@ from thesis_backend.schemas.extraction import SourceDocument, SourceLine, Source
 
 SECTION_HEADINGS = {
     'summary': {'summary', 'professional summary', 'profile', 'objective', 'career objective', 'about me'},
-    'experience': {'experience', 'work experience', 'professional experience', 'employment', 'employment history', 'work history'},
+    'work_experience': {'experience', 'work experience','professional experience', 'employment', 'employment history','work history',},
     'education': {'education', 'academic background', 'qualifications'},
     'skills': {'skills', 'technical skills', 'core skills', 'core competencies', 'highlights', 'technical expertise'},
     'coursework': {'coursework', 'relevant coursework', 'courses', 'relevant courses'},
@@ -24,15 +24,52 @@ SECTION_HEADINGS = {
 }
 
 
+def _normalize_heading(text: str) -> str:
+    return re.sub(
+        r"\s+",
+        " ",
+        text.casefold()
+        .strip(" \t:#•")
+        .replace("&", "and"),
+    )
+
+
+def _detect_section(text: str) -> str | None:
+    normalized = _normalize_heading(text)
+
+    for section, headings in SECTION_HEADINGS.items():
+        if normalized in headings:
+            return section
+
+    # Supports lines such as:
+    # Skills: Python, Java, SQL
+    # Languages: English, Vietnamese
+    if ":" in text:
+        prefix, _content = text.split(":", 1)
+        normalized_prefix = _normalize_heading(prefix)
+
+        for section, headings in SECTION_HEADINGS.items():
+            if normalized_prefix in headings:
+                return section
+
+    return None
+
+
 def label_sections(lines):
-    """Recognize explicit headings only; keep independent state per column."""
-    active = {}
+    """Assign explicit section labels while preserving independent column state."""
+    active: dict[int, tuple[str, str]] = {}
+
     for line in sorted(lines, key=lambda item: item.reading_order):
-        heading = re.sub(r'\s+', ' ', line.text.casefold().strip(' \t:#•')).replace('&', 'and')
-        section = next((key for key, names in SECTION_HEADINGS.items() if heading in names), None)
-        if section:
+        section = _detect_section(line.text)
+
+        if section is not None:
             active[line.column] = (section, line.line_id)
-        line.section, line.section_id = active.get(line.column, (None, None))
+
+        line.section, line.section_id = active.get(
+            line.column,
+            (None, None),
+        )
+
     return lines
 
 
